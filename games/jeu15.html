@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jeu du Système Solaire</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+            margin: 0;
+            overflow: hidden;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        canvas {
+            border: 1px solid #fff;
+            cursor: grab;
+        }
+
+        canvas:active {
+            cursor: grabbing;
+        }
+
+        #toolbar {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            transition: transform 0.3s ease;
+        }
+
+        #toolbar.hidden {
+            transform: translateX(-50%) translateY(-100%);
+        }
+
+        #toggleToolbar {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 5px 10px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #toggleToolbar:hover {
+            background: #555;
+        }
+
+        #info {
+            position: absolute;
+            top: 60px;
+            left: 10px;
+            max-width: 300px;
+            font-size: 14px;
+        }
+
+        button {
+            padding: 5px 10px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #555;
+        }
+
+        #simDate {
+            font-size: 14px;
+        }
+
+        input[type="datetime-local"],
+        input[type="range"],
+        select {
+            padding: 5px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="toggleToolbar">−</button>
+    <div id="toolbar">
+        <label for="speed">Vitesse : <span id="speedValue">1</span>x</label>
+        <input type="range" id="speed" min="0" max="5" step="0.1" value="1">
+        <label for="sizeScale">Taille : <span id="sizeValue">1</span>x</label>
+        <input type="range" id="sizeScale" min="0.5" max="2" step="0.1" value="1">
+        <label for="trailLength">Traînées : <span id="trailLengthValue">50</span></label>
+        <input type="range" id="trailLength" min="10" max="100" step="10" value="50">
+        <label for="gridSpacing">Grille : <span id="gridSpacingValue">2</span> UA</label>
+        <input type="range" id="gridSpacing" min="1" max="5" step="0.5" value="2">
+        <label for="gridOpacity">Opacité : <span id="gridOpacityValue">0.1</span></label>
+        <input type="range" id="gridOpacity" min="0.1" max="1.0" step="0.1" value="0.1">
+        <label for="gridColor">Couleur Grille :</label>
+        <select id="gridColor">
+            <option value="255,255,255">Blanc</option>
+            <option value="0,0,255">Bleu</option>
+            <option value="255,0,0">Rouge</option>
+            <option value="0,255,0">Vert</option>
+        </select>
+        <button id="pause">Pause</button>
+        <button id="zoomIn">Zoom +</button>
+        <button id="zoomOut">Zoom -</button>
+        <button id="orbitMode">Mode Circulaire</button>
+        <button id="reset">Réinitialiser</button>
+        <button id="toggleLabels">Masquer Labels</button>
+        <button id="toggleGrid">Masquer Grille</button>
+        <label for="followTarget">Suivre :</label>
+        <select id="followTarget">
+            <option value="none">Aucun</option>
+            <option value="Soleil">Soleil</option>
+            <option value="Mercure">Mercure</option>
+            <option value="Vénus">Vénus</option>
+            <option value="Terre">Terre</option>
+            <option value="Mars">Mars</option>
+            <option value="Jupiter">Jupiter</option>
+            <option value="Saturne">Saturne</option>
+            <option value="Uranus">Uranus</option>
+            <option value="Neptune">Neptune</option>
+            <option value="Lune">Lune</option>
+            <option value="Io">Io</option>
+            <option value="Europe">Europe</option>
+            <option value="Ganymède">Ganymède</option>
+            <option value="Callisto">Callisto</option>
+            <option value="Titan">Titan</option>
+        </select>
+        <span id="simDate">2025-04-15 00:00:00</span>
+        <input type="datetime-local" id="datePicker" min="2025-04-15T00:00:00" step="1">
+    </div>
+    <div id="info">Cliquez sur une planète, un satellite, une comète ou un astéroïde pour en savoir plus ! Glissez pour
+        déplacer, molette pour zoomer.</div>
+    <canvas id="solarSystem" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('solarSystem');
+        const ctx = canvas.getContext('2d');
+        const info = document.getElementById('info');
+        const toolbar = document.getElementById('toolbar');
+        const toggleToolbarButton = document.getElementById('toggleToolbar');
+        const speedInput = document.getElementById('speed');
+        const speedValue = document.getElementById('speedValue');
+        const sizeScaleInput = document.getElementById('sizeScale');
+        const sizeValue = document.getElementById('sizeValue');
+        const trailLengthInput = document.getElementById('trailLength');
+        const trailLengthValue = document.getElementById('trailLengthValue');
+        const gridSpacingInput = document.getElementById('gridSpacing');
+        const gridSpacingValue = document.getElementById('gridSpacingValue');
+        const gridOpacityInput = document.getElementById('gridOpacity');
+        const gridOpacityValue = document.getElementById('gridOpacityValue');
+        const gridColorSelect = document.getElementById('gridColor');
+        const pauseButton = document.getElementById('pause');
+        const zoomInButton = document.getElementById('zoomIn');
+        const zoomOutButton = document.getElementById('zoomOut');
+        const orbitModeButton = document.getElementById('orbitMode');
+        const resetButton = document.getElementById('reset');
+        const toggleLabelsButton = document.getElementById('toggleLabels');
+        const toggleGridButton = document.getElementById('toggleGrid');
+        const followTargetSelect = document.getElementById('followTarget');
+        const simDateDisplay = document.getElementById('simDate');
+        const datePicker = document.getElementById('datePicker');
+
+        // Données des planètes et satellites
+        const AU = 149597870.7; // 1 UA en km
+        const baseScaleFactor = 25; // Facteur d'échelle
+        const planets = [
+            { name: 'Mercure', radius: 12, semiMajorAxis: 0.39 * AU / AU * baseScaleFactor, eccentricity: 0.3, period: 87.97, meanOrbitalSpeed: 47.87, color: '#696969', trailColor: '#a9a9a9', info: 'Planète grise et rocailleuse.' },
+            { name: 'Vénus', radius: 20, semiMajorAxis: 0.72 * AU / AU * baseScaleFactor, eccentricity: 0.05, period: 224.7, meanOrbitalSpeed: 35.02, color: '#f0c05a', trailColor: '#ffd700', info: 'Jaune pâle, nuages épais.' },
+            { name: 'Terre', radius: 20, semiMajorAxis: 1.00 * AU / AU * baseScaleFactor, eccentricity: 0.1, period: 365.25, meanOrbitalSpeed: 29.78, color: '#1e90ff', trailColor: '#00b7eb', info: 'Bleue avec océans et terres.' },
+            { name: 'Mars', radius: 15, semiMajorAxis: 1.52 * AU / AU * baseScaleFactor, eccentricity: 0.15, period: 686.98, meanOrbitalSpeed: 24.13, color: '#d2691e', trailColor: '#ff4500', info: 'Rouge à cause de l\'oxyde de fer.' },
+            { name: 'Jupiter', radius: 30, semiMajorAxis: 5.20 * AU / AU * baseScaleFactor, eccentricity: 0.1, period: 4332.59, meanOrbitalSpeed: 13.07, color: '#deb887', trailColor: '#f4a460', info: 'Bandes brunes et beiges.' },
+            { name: 'Saturne', radius: 25, semiMajorAxis: 9.58 * AU / AU * baseScaleFactor, eccentricity: 0.1, period: 10759.22, meanOrbitalSpeed: 9.69, color: '#f4c430', trailColor: '#daa520', info: 'Jaune doré, célèbre pour ses anneaux.' },
+            { name: 'Uranus', radius: 22, semiMajorAxis: 19.18 * AU / AU * baseScaleFactor, eccentricity: 0.1, period: 30688.5, meanOrbitalSpeed: 6.81, color: '#b0e0e6', trailColor: '#40e0d0', info: 'Cyan pâle, atmosphère de méthane.' },
+            { name: 'Neptune', radius: 22, semiMajorAxis: 30.07 * AU / AU * baseScaleFactor, eccentricity: 0.05, period: 59800, meanOrbitalSpeed: 5.43, color: '#4682b4', trailColor: '#4169e1', info: 'Bleu profond, vents violents.' }
+        ];
+
+        // Satellites
+        const satellites = [
+            { name: 'Lune', parent: 'Terre', radius: 5, semiMajorAxis: 0.1 * baseScaleFactor, eccentricity: 0.15, period: 27.32, meanOrbitalSpeed: 1.02, color: '#c0c0c0', trailColor: '#d3d3d3', info: 'Satellite naturel de la Terre, surface cratérisée.' },
+            { name: 'Io', parent: 'Jupiter', radius: 5, semiMajorAxis: 0.08 * baseScaleFactor, eccentricity: 0.05, period: 1.77, meanOrbitalSpeed: 17.33, color: '#ffff99', trailColor: '#ffffe0', info: 'Lune volcanique de Jupiter.' },
+            { name: 'Europe', parent: 'Jupiter', radius: 5, semiMajorAxis: 0.13 * baseScaleFactor, eccentricity: 0.05, period: 3.55, meanOrbitalSpeed: 13.74, color: '#e6e6fa', trailColor: '#f0f8ff', info: 'Lune glacée de Jupiter, possible océan.' },
+            { name: 'Ganymède', parent: 'Jupiter', radius: 7, semiMajorAxis: 0.2 * baseScaleFactor, eccentricity: 0.1, period: 7.15, meanOrbitalSpeed: 10.88, color: '#a9a9a9', trailColor: '#c0c0c0', info: 'Plus grande lune de Jupiter, surface glacée.' },
+            { name: 'Callisto', parent: 'Jupiter', radius: 6, semiMajorAxis: 0.3 * baseScaleFactor, eccentricity: 0.05, period: 16.69, meanOrbitalSpeed: 8.20, color: '#808080', trailColor: '#a9a9a9', info: 'Lune cratérisée de Jupiter.' },
+            { name: 'Titan', parent: 'Saturne', radius: 7, semiMajorAxis: 0.25 * baseScaleFactor, eccentricity: 0.1, period: 15.95, meanOrbitalSpeed: 5.57, color: '#f4a460', trailColor: '#ffa07a', info: 'Lune de Saturne avec une atmosphère épaisse.' }
+        ];
+
+        // Comètes hyperboliques (plus de variété)
+        const comets = [
+            { name: 'Comète 1', radius: 5, semiMajorAxis: 10 * baseScaleFactor, eccentricity: 1.05, timeOffset: 0, color: '#ffffff', trailColor: '#e0e0e0', info: 'Comète hyperbolique rapide, proche du Soleil.' },
+            { name: 'Comète 2', radius: 6, semiMajorAxis: 15 * baseScaleFactor, eccentricity: 1.1, timeOffset: 100, color: '#f0f0f0', trailColor: '#d0d0d0', info: 'Comète hyperbolique avec longue queue.' },
+            { name: 'Comète 3', radius: 4, semiMajorAxis: 20 * baseScaleFactor, eccentricity: 1.15, timeOffset: 200, color: '#e8e8e8', trailColor: '#c0c0c0', info: 'Comète venant des confins du système.' },
+            { name: 'Comète 4', radius: 7, semiMajorAxis: 25 * baseScaleFactor, eccentricity: 1.2, timeOffset: 300, color: '#ffffff', trailColor: '#b0b0b0', info: 'Grande comète hyperbolique, trajectoire large.' },
+            { name: 'Comète 5', radius: 3, semiMajorAxis: 30 * baseScaleFactor, eccentricity: 1.25, timeOffset: 400, color: '#f5f5f5', trailColor: '#a0a0a0', info: 'Petite comète hyperbolique, mouvement lent.' },
+            { name: 'Comète 6', radius: 5, semiMajorAxis: 40 * baseScaleFactor, eccentricity: 1.3, timeOffset: 500, color: '#eeeeee', trailColor: '#909090', info: 'Comète hyperbolique éloignée, trajectoire unique.' }
+        ];
+
+        // Calculer semiMinorAxis et initialiser traînées
+        planets.forEach(planet => {
+            planet.semiMinorAxis = planet.semiMajorAxis * Math.sqrt(1 - planet.eccentricity ** 2);
+            planet.trail = [];
+        });
+        satellites.forEach(sat => {
+            sat.semiMinorAxis = sat.semiMajorAxis * Math.sqrt(1 - sat.eccentricity ** 2);
+            sat.trail = [];
+        });
+        comets.forEach(comet => {
+            comet.trail = [];
+        });
+
+        // Variables d'état
+        let cameraX = canvas.width / 2;
+        let cameraY = canvas.height / 2;
+        let isDragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        let globalSpeed = 1;
+        let isPaused = false;
+        let zoomLevel = 0.5;
+        let isElliptical = true;
+        let showLabels = true;
+        let showGrid = true;
+        let sizeScale = 1;
+        let trailLength = 50;
+        let gridSpacing = 2;
+        let gridOpacity = 0.1;
+        let gridColor = '255,255,255';
+        let followTarget = 'none';
+        let isToolbarVisible = true;
+
+        // Gestion du temps
+        const startDate = new Date('2025-04-15T00:00:00Z');
+        let simTime = startDate.getTime();
+        let lastFrameTime = performance.now();
+
+        // Sons MP3 (base64 simulés, remplacer par vrais fichiers si serveur)
+        const clickSound = new Audio('data:audio/mp3;base64,//MkxAA...'); // Placeholder, ajouter vrai MP3
+        const zoomSound = new Audio('data:audio/mp3;base64,//MkxAB...'); // Placeholder, ajouter vrai MP3
+        clickSound.volume = 0.5;
+        zoomSound.volume = 0.5;
+
+        // Fallback sons synthétiques
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            try {
+                if (type === 'click') {
+                    clickSound.currentTime = 0;
+                    clickSound.play().catch(() => playSynthSound('click'));
+                } else if (type === 'zoom') {
+                    zoomSound.currentTime = 0;
+                    zoomSound.play().catch(() => playSynthSound('zoom'));
+                }
+            } catch {
+                playSynthSound(type);
+            }
+        }
+
+        function playSynthSound(type) {
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            if (type === 'click') {
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            } else if (type === 'zoom') {
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(200, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            }
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.3);
+        }
+
+        // Masquer/afficher barre
+        toggleToolbarButton.addEventListener('click', () => {
+            isToolbarVisible = !isToolbarVisible;
+            toolbar.classList.toggle('hidden', !isToolbarVisible);
+            toggleToolbarButton.textContent = isToolbarVisible ? '−' : '+';
+        });
+
+        // Sélecteur de temps
+        datePicker.value = startDate.toISOString().slice(0, 19).replace('T', ' ');
+        datePicker.addEventListener('change', () => {
+            const newDate = new Date(datePicker.value);
+            if (!isNaN(newDate.getTime())) {
+                simTime = newDate.getTime();
+                simDateDisplay.textContent = newDate.toISOString().replace('T', ' ').slice(0, 19);
+            }
+        });
+
+        // Textures simulées
+        function createTexture(color, type) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 64;
+            tempCanvas.height = 64;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            if (type === 'planet') {
+                const gradient = tempCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+                gradient.addColorStop(0, '#fff');
+                gradient.addColorStop(1, color);
+                tempCtx.fillStyle = gradient;
+                tempCtx.fillRect(0, 0, 64, 64);
+            } else if (type === 'moon') {
+                tempCtx.fillStyle = color;
+                tempCtx.fillRect(0, 0, 64, 64);
+                tempCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                for (let i = 0; i < 10; i++) {
+                    tempCtx.beginPath();
+                    tempCtx.arc(Math.random() * 64, Math.random() * 64, Math.random() * 5, 0, Math.PI * 2);
+                    tempCtx.fill();
+                }
+            } else if (type === 'titan') {
+                const gradient = tempCtx.createLinearGradient(0, 0, 64, 64);
+                gradient.addColorStop(0, color);
+                gradient.addColorStop(1, '#d2691e');
+                tempCtx.fillStyle = gradient;
+                tempCtx.fillRect(0, 0, 64, 64);
+            } else if (type === 'comet') {
+                tempCtx.fillStyle = color;
+                tempCtx.fillRect(0, 0, 64, 64);
+                tempCtx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                tempCtx.beginPath();
+                tempCtx.arc(32, 32, 20, 0, Math.PI * 2);
+                tempCtx.fill();
+            }
+
+            return tempCtx.createPattern(tempCanvas, 'repeat');
+        }
+
+        planets.forEach(planet => {
+            planet.texture = createTexture(planet.color, 'planet');
+        });
+        satellites.forEach(sat => {
+            sat.texture = createTexture(sat.color, sat.name === 'Titan' ? 'titan' : 'moon');
+        });
+        comets.forEach(comet => {
+            comet.texture = createTexture(comet.color, 'comet');
+        });
+
+        // Astéroïdes
+        const asteroids = [];
+        for (let i = 0; i < 200; i++) {
+            const semiMajorAxis = (2.2 + Math.random() * (3.2 - 2.2)) * baseScaleFactor;
+            const eccentricity = Math.random() * 0.2;
+            const semiMinorAxis = semiMajorAxis * Math.sqrt(1 - eccentricity ** 2);
+            const period = 365.25 * Math.pow(semiMajorAxis / baseScaleFactor, 1.5);
+            asteroids.push({ semiMajorAxis, semiMinorAxis, eccentricity, period, radius: 4 });
+        }
+
+        // Résolution de l'équation de Kepler
+        function solveKepler(M, e, tolerance = 1e-6, maxIterations = 100) {
+            let E = M;
+            for (let i = 0; i < maxIterations; i++) {
+                const delta = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+                E -= delta;
+                if (Math.abs(delta) < tolerance) break;
+            }
+            return E;
+        }
+
+        // Calcul pour orbites hyperboliques
+        function solveHyperbolicKepler(M, e, tolerance = 1e-6, maxIterations = 100) {
+            let H = M;
+            for (let i = 0; i < maxIterations; i++) {
+                const delta = (e * Math.sinh(H) - H - M) / (e * Math.cosh(H) - 1);
+                H -= delta;
+                if (Math.abs(delta) < tolerance) break;
+            }
+            return H;
+        }
+
+        // Contrôles
+        speedInput.addEventListener('input', () => {
+            globalSpeed = parseFloat(speedInput.value);
+            speedValue.textContent = globalSpeed.toFixed(1);
+        });
+
+        sizeScaleInput.addEventListener('input', () => {
+            sizeScale = parseFloat(sizeScaleInput.value);
+            sizeValue.textContent = sizeScale.toFixed(1);
+        });
+
+        trailLengthInput.addEventListener('input', () => {
+            trailLength = parseInt(trailLengthInput.value);
+            trailLengthValue.textContent = trailLength;
+        });
+
+        gridSpacingInput.addEventListener('input', () => {
+            gridSpacing = parseFloat(gridSpacingInput.value);
+            gridSpacingValue.textContent = gridSpacing;
+        });
+
+        gridOpacityInput.addEventListener('input', () => {
+            gridOpacity = parseFloat(gridOpacityInput.value);
+            gridOpacityValue.textContent = gridOpacity.toFixed(1);
+        });
+
+        gridColorSelect.addEventListener('change', () => {
+            gridColor = gridColorSelect.value;
+        });
+
+        pauseButton.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseButton.textContent = isPaused ? 'Reprendre' : 'Pause';
+            if (!isPaused) {
+                lastFrameTime = performance.now();
+                requestAnimationFrame(draw);
+            }
+        });
+
+        zoomInButton.addEventListener('click', () => {
+            zoomLevel = Math.min(zoomLevel * 1.2, 100);
+            playSound('zoom');
+        });
+
+        zoomOutButton.addEventListener('click', () => {
+            zoomLevel = Math.max(zoomLevel / 1.2, 0.1);
+            playSound('zoom');
+        });
+
+        orbitModeButton.addEventListener('click', () => {
+            isElliptical = !isElliptical;
+            orbitModeButton.textContent = isElliptical ? 'Mode Circulaire' : 'Mode Elliptique';
+        });
+
+        resetButton.addEventListener('click', () => {
+            cameraX = canvas.width / 2;
+            cameraY = canvas.height / 2;
+            zoomLevel = 0.5;
+            simTime = startDate.getTime();
+            simDateDisplay.textContent = startDate.toISOString().replace('T', ' ').slice(0, 19);
+            datePicker.value = startDate.toISOString().slice(0, 19).replace('T', ' ');
+            sizeScale = 1;
+            sizeScaleInput.value = 1;
+            sizeValue.textContent = '1';
+            trailLength = 50;
+            trailLengthInput.value = 50;
+            trailLengthValue.textContent = '50';
+            gridSpacing = 2;
+            gridSpacingInput.value = 2;
+            gridSpacingValue.textContent = '2';
+            gridOpacity = 0.1;
+            gridOpacityInput.value = 0.1;
+            gridOpacityValue.textContent = '0.1';
+            gridColor = '255,255,255';
+            gridColorSelect.value = '255,255,255';
+            followTarget = 'none';
+            followTargetSelect.value = 'none';
+            showLabels = true;
+            toggleLabelsButton.textContent = 'Masquer Labels';
+            showGrid = true;
+            toggleGridButton.textContent = 'Masquer Grille';
+            isToolbarVisible = true;
+            toolbar.classList.remove('hidden');
+            toggleToolbarButton.textContent = '−';
+            planets.forEach(planet => planet.trail = []);
+            satellites.forEach(sat => sat.trail = []);
+            comets.forEach(comet => comet.trail = []);
+        });
+
+        toggleLabelsButton.addEventListener('click', () => {
+            showLabels = !showLabels;
+            toggleLabelsButton.textContent = showLabels ? 'Masquer Labels' : 'Afficher Labels';
+        });
+
+        toggleGridButton.addEventListener('click', () => {
+            showGrid = !showGrid;
+            toggleGridButton.textContent = showGrid ? 'Masquer Grille' : 'Afficher Grille';
+        });
+
+        followTargetSelect.addEventListener('change', () => {
+            followTarget = followTargetSelect.value;
+        });
+
+        // Zoom molette
+        canvas.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+
+            const worldXBefore = (mouseX - cameraX) / zoomLevel + cameraX;
+            const worldYBefore = (mouseY - cameraY) / zoomLevel + cameraY;
+
+            const zoomSpeed = event.deltaY > 0 ? 1 / 1.1 : 1.1;
+            const newZoomLevel = Math.max(Math.min(zoomLevel * zoomSpeed, 100), 0.1);
+
+            cameraX = mouseX - (worldXBefore - cameraX) * newZoomLevel;
+            cameraY = mouseY - (worldYBefore - cameraY) * newZoomLevel;
+            zoomLevel = newZoomLevel;
+
+            playSound('zoom');
+        });
+
+        // Déplacement caméra
+        canvas.addEventListener('mousedown', (event) => {
+            isDragging = true;
+            lastMouseX = event.clientX;
+            lastMouseY = event.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            if (isDragging && followTarget === 'none') {
+                const deltaX = event.clientX - lastMouseX;
+                const deltaY = event.clientY - lastMouseY;
+                cameraX += deltaX;
+                cameraY += deltaY;
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+        });
+
+        // Dessiner la grille
+        function drawGrid() {
+            if (!showGrid) return;
+            ctx.save();
+            ctx.translate(cameraX, cameraY);
+            ctx.scale(zoomLevel, zoomLevel);
+            ctx.translate(-cameraX, -cameraY);
+
+            const [r, g, b] = gridColor.split(',').map(Number);
+            ctx.strokeStyle = `rgba(${r},${g},${b},${gridOpacity})`;
+            ctx.setLineDash([5, 5]);
+
+            const gridSize = gridSpacing * baseScaleFactor;
+            const gridCount = Math.floor(canvas.width / (gridSize * zoomLevel)) + 1;
+
+            for (let i = -gridCount; i <= gridCount; i++) {
+                const x = cameraX + i * gridSize;
+                const y = cameraY + i * gridSize;
+
+                ctx.beginPath();
+                ctx.moveTo(x, cameraY - gridCount * gridSize);
+                ctx.lineTo(x, cameraY + gridCount * gridSize);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(cameraX - gridCount * gridSize, y);
+                ctx.lineTo(cameraX + gridCount * gridSize, y);
+                ctx.stroke();
+            }
+
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+
+        function draw() {
+            if (isPaused) {
+                const simDate = new Date(simTime);
+                simDateDisplay.textContent = simDate.toISOString().replace('T', ' ').slice(0, 19);
+            } else {
+                const currentTime = performance.now();
+                const deltaTime = (currentTime - lastFrameTime) / 1000;
+                lastFrameTime = currentTime;
+                simTime += deltaTime * globalSpeed * 86400000;
+                const simDate = new Date(simTime);
+                simDateDisplay.textContent = simDate.toISOString().replace('T', ' ').slice(0, 19);
+                datePicker.value = simDate.toISOString().slice(0, 19).replace('T', ' ');
+            }
+
+            // Effacer canvas
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Dessiner grille
+            drawGrid();
+
+            // Appliquer zoom et caméra
+            ctx.save();
+            ctx.translate(cameraX, cameraY);
+            ctx.scale(zoomLevel, zoomLevel);
+            ctx.translate(-cameraX, -cameraY);
+
+            // Ajuster opacité traînées
+            const trailOpacity = zoomLevel > 10 ? 0.2 : 0.3;
+
+            // Dessiner Soleil
+            ctx.beginPath();
+            ctx.arc(cameraX, cameraY, 50 * sizeScale, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffeb3b';
+            ctx.fill();
+            if (showLabels && zoomLevel >= 0.3) {
+                ctx.font = `${14 * sizeScale}px Arial`;
+                ctx.fillStyle = 'white';
+                ctx.fillText('Soleil', cameraX + 55 * sizeScale, cameraY);
+            }
+
+            // Calculer positions
+            const daysSinceStart = (simTime - startDate.getTime()) / 86400000;
+
+            // Caméra auto-centrée
+            if (followTarget !== 'none') {
+                if (followTarget === 'Soleil') {
+                    cameraX = canvas.width / 2;
+                    cameraY = canvas.height / 2;
+                } else {
+                    const planet = planets.find(p => p.name === followTarget);
+                    const satellite = satellites.find(s => s.name === followTarget);
+                    if (planet && planet.currentX && planet.currentY) {
+                        cameraX = planet.currentX;
+                        cameraY = planet.currentY;
+                    } else if (satellite && satellite.currentX && satellite.currentY) {
+                        cameraX = satellite.currentX;
+                        cameraY = satellite.currentY;
+                    }
+                }
+            }
+
+            planets.forEach(planet => {
+                const M = (2 * Math.PI * daysSinceStart) / planet.period;
+                const E = solveKepler(M, planet.eccentricity);
+                const trueAnomaly = 2 * Math.atan2(
+                    Math.sqrt(1 + planet.eccentricity) * Math.sin(E / 2),
+                    Math.sqrt(1 - planet.eccentricity) * Math.cos(E / 2)
+                );
+                const r = planet.semiMajorAxis * (1 - planet.eccentricity ** 2) / (1 + planet.eccentricity * Math.cos(trueAnomaly));
+                const majorAxis = planet.semiMajorAxis;
+                const minorAxis = isElliptical ? planet.semiMinorAxis : planet.semiMajorAxis;
+                const x = cameraX + r * Math.cos(trueAnomaly);
+                const y = cameraY + r * Math.sin(trueAnomaly) * (isElliptical ? minorAxis / majorAxis : 1);
+
+                // Traînée
+                planet.trail.push({ x, y });
+                if (planet.trail.length > trailLength) {
+                    planet.trail.shift();
+                }
+
+                // Dessiner traînée
+                ctx.beginPath();
+                ctx.strokeStyle = planet.trailColor.replace('1)', trailOpacity + ')');
+                ctx.lineWidth = 1 / zoomLevel;
+                for (let i = 1; i < planet.trail.length; i++) {
+                    ctx.moveTo(planet.trail[i - 1].x, planet.trail[i - 1].y);
+                    ctx.lineTo(planet.trail[i].x, planet.trail[i].y);
+                }
+                ctx.stroke();
+
+                // Orbite
+                ctx.beginPath();
+                ctx.ellipse(cameraX, cameraY, majorAxis, minorAxis, 0, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.stroke();
+
+                // Planète
+                ctx.beginPath();
+                ctx.arc(x, y, planet.radius * sizeScale, 0, Math.PI * 2);
+                ctx.fillStyle = planet.texture;
+                ctx.fill();
+
+                // Label
+                if (showLabels && zoomLevel >= 0.3) {
+                    ctx.font = `${14 * sizeScale}px Arial`;
+                    ctx.fillStyle = 'white';
+                    ctx.fillText(planet.name, x + planet.radius * sizeScale + 5, y);
+                }
+
+                planet.currentX = x;
+                planet.currentY = y;
+
+                // Satellites
+                satellites.forEach(sat => {
+                    if (sat.parent === planet.name) {
+                        const satM = (2 * Math.PI * daysSinceStart) / sat.period;
+                        const satE = solveKepler(satM, sat.eccentricity);
+                        const satTrueAnomaly = 2 * Math.atan2(
+                            Math.sqrt(1 + sat.eccentricity) * Math.sin(satE / 2),
+                            Math.sqrt(1 - sat.eccentricity) * Math.cos(satE / 2)
+                        );
+                        const satR = sat.semiMajorAxis * (1 - sat.eccentricity ** 2) / (1 + sat.eccentricity * Math.cos(satTrueAnomaly));
+                        const satX = x + satR * Math.cos(satTrueAnomaly);
+                        const satY = y + satR * Math.sin(satTrueAnomaly) * (isElliptical ? sat.semiMinorAxis / sat.semiMajorAxis : 1);
+
+                        // Traînée
+                        sat.trail.push({ x: satX, y: satY });
+                        if (sat.trail.length > trailLength) {
+                            sat.trail.shift();
+                        }
+
+                        // Dessiner traînée
+                        ctx.beginPath();
+                        ctx.strokeStyle = sat.trailColor.replace('1)', trailOpacity + ')');
+                        ctx.lineWidth = 0.5 / zoomLevel;
+                        for (let i = 1; i < sat.trail.length; i++) {
+                            ctx.moveTo(sat.trail[i - 1].x, sat.trail[i - 1].y);
+                            ctx.lineTo(sat.trail[i].x, sat.trail[i].y);
+                        }
+                        ctx.stroke();
+
+                        // Orbite
+                        ctx.beginPath();
+                        ctx.ellipse(x, y, sat.semiMajorAxis, isElliptical ? sat.semiMinorAxis : sat.semiMajorAxis, 0, 0, Math.PI * 2);
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                        ctx.stroke();
+
+                        // Satellite
+                        ctx.beginPath();
+                        ctx.arc(satX, satY, sat.radius * sizeScale, 0, Math.PI * 2);
+                        ctx.fillStyle = sat.texture;
+                        ctx.fill();
+
+                        // Label
+                        if (showLabels && zoomLevel >= 0.3) {
+                            ctx.font = `${12 * sizeScale}px Arial`;
+                            ctx.fillText(sat.name, satX + sat.radius * sizeScale + 5, satY);
+                        }
+
+                        sat.currentX = satX;
+                        sat.currentY = satY;
+                    }
+                });
+            });
+
+            // Comètes hyperboliques
+            comets.forEach(comet => {
+                const M = (daysSinceStart - comet.timeOffset) / 100;
+                const H = solveHyperbolicKepler(M, comet.eccentricity);
+                const trueAnomaly = 2 * Math.atan2(
+                    Math.sqrt(comet.eccentricity + 1) * Math.tanh(H / 2),
+                    Math.sqrt(comet.eccentricity - 1)
+                );
+                const r = comet.semiMajorAxis * (comet.eccentricity ** 2 - 1) / (1 + comet.eccentricity * Math.cos(trueAnomaly));
+                const x = cameraX + r * Math.cos(trueAnomaly);
+                const y = cameraY + r * Math.sin(trueAnomaly);
+
+                // Traînée
+                comet.trail.push({ x, y });
+                if (comet.trail.length > trailLength) {
+                    comet.trail.shift();
+                }
+
+                // Dessiner traînée
+                ctx.beginPath();
+                ctx.strokeStyle = comet.trailColor.replace('1)', trailOpacity + ')');
+                ctx.lineWidth = 0.5 / zoomLevel;
+                for (let i = 1; i < comet.trail.length; i++) {
+                    ctx.moveTo(comet.trail[i - 1].x, comet.trail[i - 1].y);
+                    ctx.lineTo(comet.trail[i].x, comet.trail[i].y);
+                }
+                ctx.stroke();
+
+                // Orbite partielle
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.lineWidth = 0.5 / zoomLevel;
+                const steps = 100;
+                for (let i = -steps; i < steps; i++) {
+                    const theta = (i / steps) * Math.PI / 2;
+                    const rOrbit = comet.semiMajorAxis * (comet.eccentricity ** 2 - 1) / (1 + comet.eccentricity * Math.cos(theta));
+                    const xOrbit = cameraX + rOrbit * Math.cos(theta);
+                    const yOrbit = cameraY + rOrbit * Math.sin(theta);
+                    if (i === -steps) {
+                        ctx.moveTo(xOrbit, yOrbit);
+                    } else {
+                        ctx.lineTo(xOrbit, yOrbit);
+                    }
+                }
+                ctx.stroke();
+
+                // Comète
+                ctx.beginPath();
+                ctx.arc(x, y, comet.radius * sizeScale, 0, Math.PI * 2);
+                ctx.fillStyle = comet.texture;
+                ctx.fill();
+
+                // Label
+                if (showLabels && zoomLevel >= 0.3) {
+                    ctx.font = `${12 * sizeScale}px Arial`;
+                    ctx.fillText(comet.name, x + comet.radius * sizeScale + 5, y);
+                }
+
+                comet.currentX = x;
+                comet.currentY = y;
+                comet.currentR = r / baseScaleFactor;
+            });
+
+            // Astéroïdes
+            asteroids.forEach((ast, index) => {
+                const M = (2 * Math.PI * daysSinceStart) / ast.period;
+                const E = solveKepler(M, ast.eccentricity);
+                const trueAnomaly = 2 * Math.atan2(
+                    Math.sqrt(1 + ast.eccentricity) * Math.sin(E / 2),
+                    Math.sqrt(1 - ast.eccentricity) * Math.cos(E / 2)
+                );
+                const r = ast.semiMajorAxis * (1 - ast.eccentricity ** 2) / (1 + ast.eccentricity * Math.cos(trueAnomaly));
+                const x = cameraX + r * Math.cos(trueAnomaly);
+                const y = cameraY + r * Math.sin(trueAnomaly) * (isElliptical ? ast.semiMinorAxis / ast.semiMajorAxis : 1);
+
+                ctx.beginPath();
+                ctx.arc(x, y, ast.radius * sizeScale, 0, Math.PI * 2);
+                ctx.fillStyle = '#666';
+                ctx.fill();
+
+                ast.currentX = x;
+                ast.currentY = y;
+            });
+
+            ctx.restore();
+
+            requestAnimationFrame(draw);
+        }
+
+        // Gérer clics
+        canvas.addEventListener('click', (event) => {
+            if (!isDragging) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = (event.clientX - rect.left - cameraX) / zoomLevel + cameraX;
+                const mouseY = (event.clientY - rect.top - cameraY) / zoomLevel + cameraY;
+
+                let clicked = false;
+
+                // Satellites
+                satellites.forEach(sat => {
+                    const dx = mouseX - sat.currentX;
+                    const dy = mouseY - sat.currentY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < sat.radius * sizeScale) {
+                        info.textContent = `${sat.name} : ${sat.info}\nDistance : ${(sat.semiMajorAxis / baseScaleFactor).toFixed(2)} UA\nPériode : ${sat.period.toFixed(2)} jours\nVitesse : ${sat.meanOrbitalSpeed.toFixed(2)} km/s`;
+                        followTarget = sat.name;
+                        followTargetSelect.value = sat.name;
+                        playSound('click');
+                        clicked = true;
+                    }
+                });
+
+                // Planètes
+                planets.forEach(planet => {
+                    const dx = mouseX - planet.currentX;
+                    const dy = mouseY - planet.currentY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < planet.radius * sizeScale) {
+                        info.textContent = `${planet.name} : ${planet.info}\nDistance : ${(planet.semiMajorAxis / baseScaleFactor).toFixed(2)} UA\nPériode : ${planet.period.toFixed(2)} jours\nVitesse : ${planet.meanOrbitalSpeed.toFixed(2)} km/s`;
+                        followTarget = planet.name;
+                        followTargetSelect.value = planet.name;
+                        playSound('click');
+                        clicked = true;
+                    }
+                });
+
+                // Comètes
+                comets.forEach(comet => {
+                    const dx = mouseX - comet.currentX;
+                    const dy = mouseY - comet.currentY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < comet.radius * sizeScale) {
+                        info.textContent = `${comet.name} : ${comet.info}\nDistance actuelle : ${comet.currentR.toFixed(2)} UA\nTrajectoire : Hyperbolique`;
+                        playSound('click');
+                        clicked = true;
+                    }
+                });
+
+                // Astéroïdes
+                asteroids.forEach(ast => {
+                    const dx = mouseX - ast.currentX;
+                    const dy = mouseY - ast.currentY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < ast.radius * sizeScale) {
+                        info.textContent = `Astéroïde : Objet de la ceinture entre Mars et Jupiter.\nDistance : ${(ast.semiMajorAxis / baseScaleFactor).toFixed(2)} UA\nPériode estimée : ${ast.period.toFixed(2)} jours`;
+                        playSound('click');
+                        clicked = true;
+                    }
+                });
+
+                // Soleil
+                const dxSun = mouseX - cameraX;
+                const dySun = mouseY - cameraY;
+                const distanceSun = Math.sqrt(dxSun * dxSun + dySun * dySun);
+                if (distanceSun < 50 * sizeScale && !clicked) {
+                    info.textContent = 'Soleil : Étoile centrale du système solaire.\nDistance : 0 UA';
+                    followTarget = 'Soleil';
+                    followTargetSelect.value = 'Soleil';
+                    playSound('click');
+                }
+            }
+        });
+
+        // Lancer animation
+        lastFrameTime = performance.now();
+        draw();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Casse-Briques Futuriste avec Score et Sons Variés</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0a0a1f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        canvas {
+            border: 2px solid #00ffff;
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.8), inset 0 0 15px rgba(0, 255, 255, 0.3);
+            background: linear-gradient(135deg, #1a1a3d, #0d0d26);
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Variables
+        let balls = [{ x: canvas.width / 2, y: canvas.height - 30, dx: 3, dy: -3, radius: 12, invincible: false }];
+        const paddleHeight = 15;
+        let paddleWidth = 100;
+        let paddleX = (canvas.width - paddleWidth) / 2;
+        let paddleGuns = false;
+
+        let rightPressed = false;
+        let leftPressed = false;
+
+        const brickRowCount = 8;
+        const brickColumnCount = 12;
+        const brickWidth = 40;
+        const brickHeight = 15;
+        const brickPadding = 5;
+        const brickOffsetTop = 30;
+        const brickOffsetLeft = 30;
+
+        let level = 1;
+        const maxLevels = 10;
+        let bricks = [];
+        const brickColors = ['#00FFFF', '#FF00FF', '#FF1493', '#00FF00', '#FFFF00', '#FF4500', '#9400D3', '#1E90FF', '#FF69B4', '#00CED1', '#ADFF2F', '#FF6347'];
+
+        let bonuses = [];
+        let bullets = [];
+        let score = 0;
+
+        // Sons variés
+        const brickBreakSound = new Audio('https://www.myinstants.com/media/sounds/8bit-explosion.mp3'); // Explosion 8-bit pour brique
+        const paddleHitSound = new Audio('https://www.myinstants.com/media/sounds/ping.mp3'); // Ping futuriste pour raquette
+        const bonusCollectSound = new Audio('https://www.myinstants.com/media/sounds/coin.mp3'); // Son de pièce pour bonus
+        const gunShotSound = new Audio('https://www.myinstants.com/media/sounds/pew.mp3'); // Pew pour mitrailleuses
+        const levelCompleteSound = new Audio('https://www.myinstants.com/media/sounds/victory.mp3'); // Victoire pour fin de niveau
+
+        // Initialisation des briques
+        function initBricks() {
+            bricks = [];
+            for (let c = 0; c < brickColumnCount; c++) {
+                bricks[c] = [];
+                for (let r = 0; r < brickRowCount; r++) {
+                    const colorIndex = c % brickColors.length;
+                    const hitsRequired = Math.min(colorIndex === 0 ? 3 : colorIndex === 1 ? 2 : 1 + Math.floor(level / 3), 5);
+                    bricks[c][r] = {
+                        x: 0,
+                        y: 0,
+                        status: hitsRequired,
+                        maxHits: hitsRequired,
+                        bonus: Math.random() > 0.7 ? getRandomBonus() : null
+                    };
+                }
+            }
+        }
+        initBricks();
+
+        // Écouteurs d'événements
+        document.addEventListener('keydown', keyDownHandler);
+        document.addEventListener('keyup', keyUpHandler);
+
+        function keyDownHandler(e) {
+            if (e.key === 'Right' || e.key === 'ArrowRight') rightPressed = true;
+            else if (e.key === 'Left' || e.key === 'ArrowLeft') leftPressed = true;
+        }
+
+        function keyUpHandler(e) {
+            if (e.key === 'Right' || e.key === 'ArrowRight') rightPressed = false;
+            else if (e.key === 'Left' || e.key === 'ArrowLeft') leftPressed = false;
+        }
+
+        // Générer un bonus aléatoire (pendant le jeu)
+        function getRandomBonus() {
+            const bonuses = ['tripleBall', 'paddleGuns', 'hugePaddle', 'miniPaddle', 'invincibleBall', 'maxiBall', 'miniBall'];
+            return bonuses[Math.floor(Math.random() * bonuses.length)];
+        }
+
+        // Générer un bonus de fin de niveau
+        function getLevelEndBonus() {
+            const levelBonuses = [
+                { type: 'extraPoints', value: 500, color: '#FFFF00' },
+                { type: 'extraBall', value: 1, color: '#00FFFF' },
+                { type: 'longPaddle', value: 250, color: '#00FF00' }
+            ];
+            return levelBonuses[Math.floor(Math.random() * levelBonuses.length)];
+        }
+
+        // Appliquer le bonus (pendant le jeu)
+        function applyBonus(bonus) {
+            bonusCollectSound.play(); // Son de pièce pour bonus
+            score += 50;
+            if (bonus.type === 'tripleBall') {
+                balls.push({ x: bonus.x, y: bonus.y, dx: 3, dy: -3, radius: 12, invincible: false });
+                balls.push({ x: bonus.x, y: bonus.y, dx: -3, dy: -3, radius: 12, invincible: false });
+            } else if (bonus.type === 'paddleGuns') {
+                paddleGuns = true;
+                setTimeout(() => paddleGuns = false, 10000);
+            } else if (bonus.type === 'hugePaddle' && paddleWidth < 200) {
+                paddleWidth = 200;
+            } else if (bonus.type === 'miniPaddle' && paddleWidth > 50) {
+                paddleWidth = 50;
+            } else if (bonus.type === 'invincibleBall') {
+                balls.forEach(ball => {
+                    ball.invincible = true;
+                    setTimeout(() => ball.invincible = false, 10000);
+                });
+            } else if (bonus.type === 'maxiBall') {
+                balls.forEach(ball => ball.radius = Math.min(ball.radius + 10, 30));
+            } else if (bonus.type === 'miniBall') {
+                balls.forEach(ball => ball.radius = Math.max(ball.radius - 5, 5));
+            }
+        }
+
+        // Appliquer le bonus de fin de niveau
+        function applyLevelEndBonus(bonus) {
+            bonusCollectSound.play(); // Son de pièce pour bonus de niveau
+            if (bonus.type === 'extraPoints') {
+                score += bonus.value;
+                alert(`Bonus de niveau : +${bonus.value} points ! Score : ${score}`);
+            } else if (bonus.type === 'extraBall') {
+                balls.push({ x: canvas.width / 2, y: canvas.height - 30, dx: 3, dy: -3, radius: 12, invincible: false });
+                alert(`Bonus de niveau : +1 balle ! Score : ${score}`);
+            } else if (bonus.type === 'longPaddle') {
+                paddleWidth = bonus.value;
+                alert(`Bonus de niveau : Raquette élargie à ${paddleWidth}px ! Score : ${score}`);
+            }
+        }
+
+        // Dessiner la balle
+        function drawBall(ball) {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            const gradient = ctx.createRadialGradient(ball.x, ball.y, 2, ball.x, ball.y, ball.radius);
+            gradient.addColorStop(0, ball.invincible ? '#ff00ff' : '#00ffff');
+            gradient.addColorStop(1, ball.invincible ? '#ff1493' : '#1e90ff');
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = ball.invincible ? 'rgba(255, 20, 147, 0.8)' : 'rgba(0, 255, 255, 0.8)';
+            ctx.strokeStyle = ball.invincible ? '#ff69b4' : '#00ced1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+
+        // Dessiner la raquette
+        function drawPaddle() {
+            ctx.beginPath();
+            ctx.roundRect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight, 8);
+            const gradient = ctx.createLinearGradient(paddleX, canvas.height - paddleHeight, paddleX + paddleWidth, canvas.height);
+            gradient.addColorStop(0, '#00ffff');
+            gradient.addColorStop(1, '#1e90ff');
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = 'rgba(0, 255, 255, 0.7)';
+            ctx.strokeStyle = '#00ced1';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.closePath();
+
+            if (paddleGuns) {
+                ctx.beginPath();
+                ctx.roundRect(paddleX - 12, canvas.height - paddleHeight - 7, 10, 12, 2);
+                ctx.roundRect(paddleX + paddleWidth + 2, canvas.height - paddleHeight - 7, 10, 12, 2);
+                const gunGradient = ctx.createLinearGradient(paddleX - 12, 0, paddleX + paddleWidth + 12, 0);
+                gunGradient.addColorStop(0, '#ff00ff');
+                gunGradient.addColorStop(1, '#9400d3');
+                ctx.fillStyle = gunGradient;
+                ctx.fill();
+                ctx.shadowColor = 'rgba(255, 0, 255, 0.7)';
+                ctx.strokeStyle = '#ff69b4';
+                ctx.stroke();
+                ctx.closePath();
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        // Dessiner les briques
+        function drawBricks() {
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    const b = bricks[c][r];
+                    if (b.status > 0) {
+                        const brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
+                        const brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
+                        b.x = brickX;
+                        b.y = brickY;
+
+                        ctx.beginPath();
+                        ctx.roundRect(brickX, brickY, brickWidth, brickHeight, 5);
+                        const gradient = ctx.createLinearGradient(brickX, brickY, brickX + brickWidth, brickY + brickHeight);
+                        const baseColor = brickColors[c % brickColors.length];
+                        gradient.addColorStop(0, baseColor);
+                        gradient.addColorStop(1, adjustColor(baseColor, -100));
+                        ctx.fillStyle = gradient;
+                        ctx.fill();
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = baseColor;
+                        ctx.strokeStyle = adjustColor(baseColor, 50);
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                        ctx.closePath();
+
+                        ctx.font = 'bold 14px "Orbitron", sans-serif';
+                        ctx.fillStyle = '#fff';
+                        ctx.textAlign = 'center';
+                        ctx.shadowBlur = 5;
+                        ctx.shadowColor = baseColor;
+                        ctx.fillText(b.status, brickX + brickWidth / 2, brickY + brickHeight / 2 + 5);
+                        ctx.shadowBlur = 0;
+                    }
+                }
+            }
+        }
+
+        // Dessiner les bonus
+        function drawBonuses() {
+            bonuses.forEach((bonus, index) => {
+                const bonusX = bonus.x;
+                const bonusY = bonus.y;
+                const bonusSize = 20;
+
+                ctx.shadowBlur = 25;
+                if (bonus.type === 'tripleBall') {
+                    ctx.beginPath();
+                    ctx.fillStyle = '#00ffff';
+                    ctx.arc(bonusX + 5, bonusY + 5, 4, 0, Math.PI * 2);
+                    ctx.arc(bonusX + 15, bonusY + 5, 4, 0, Math.PI * 2);
+                    ctx.arc(bonusX + 10, bonusY + 15, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowColor = 'rgba(0, 255, 255, 0.8)';
+                } else if (bonus.type === 'paddleGuns') {
+                    ctx.beginPath();
+                    ctx.fillStyle = '#ff00ff';
+                    ctx.roundRect(bonusX + 5, bonusY + 5, 10, 10, 2);
+                    ctx.fill();
+                    ctx.shadowColor = 'rgba(255, 0, 255, 0.8)';
+                } else if (bonus.type === 'hugePaddle') {
+                    ctx.beginPath();
+                    ctx.fillStyle = '#00ff00';
+                    ctx.moveTo(bonusX + 10, bonusY + 5);
+                    ctx.lineTo(bonusX + 5, bonusY + 15);
+                    ctx.lineTo(bonusX + 15, bonusY + 15);
+                    ctx.fill();
+                    ctx.shadowColor = 'rgba(0, 255, 0, 0.8)';
+                } else if (bonus.type === 'miniPaddle') {
+                    ctx.beginPath();
+                    ctx.fillStyle = '#ff4500';
+                    ctx.moveTo(bonusX + 5, bonusY + 5);
+                    ctx.lineTo(bonusX + 15, bonusY + 5);
+                    ctx.lineTo(bonusX + 10, bonusY + 15);
+                    ctx.fill();
+                    ctx.shadowColor = 'rgba(255, 69, 0, 0.8)';
+                } else if (bonus.type === 'invincibleBall') {
+                    ctx.beginPath();
+                    const gradient = ctx.createRadialGradient(bonusX + 7, bonusY + 7, 2, bonusX + 10, bonusY + 10, 8);
+                    gradient.addColorStop(0, '#ff00ff');
+                    gradient.addColorStop(1, '#9400d3');
+                    ctx.fillStyle = gradient;
+                    ctx.arc(bonusX + 10, bonusY + 10, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowColor = 'rgba(255, 0, 255, 0.8)';
+                } else if (bonus.type === 'maxiBall') {
+                    ctx.beginPath();
+                    const gradient = ctx.createRadialGradient(bonusX + 7, bonusY + 7, 2, bonusX + 10, bonusY + 10, 10);
+                    gradient.addColorStop(0, '#00ffff');
+                    gradient.addColorStop(1, '#00ced1');
+                    ctx.fillStyle = gradient;
+                    ctx.arc(bonusX + 10, bonusY + 10, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowColor = 'rgba(0, 255, 255, 0.8)';
+                } else if (bonus.type === 'miniBall') {
+                    ctx.beginPath();
+                    const gradient = ctx.createRadialGradient(bonusX + 8, bonusY + 8, 1, bonusX + 10, bonusY + 10, 4);
+                    gradient.addColorStop(0, '#ffff00');
+                    gradient.addColorStop(1, '#ff4500');
+                    ctx.fillStyle = gradient;
+                    ctx.arc(bonusX + 10, bonusY + 10, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowColor = 'rgba(255, 69, 0, 0.8)';
+                }
+                ctx.shadowBlur = 0;
+
+                ctx.beginPath();
+                ctx.rect(bonusX, bonusY, bonusSize, bonusSize);
+                ctx.strokeStyle = '#00ffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+
+                bonus.y += 2;
+                if (bonus.y + bonusSize > canvas.height - paddleHeight && bonus.x > paddleX && bonus.x < paddleX + paddleWidth) {
+                    applyBonus(bonus);
+                    bonuses.splice(index, 1);
+                } else if (bonus.y > canvas.height) {
+                    bonuses.splice(index, 1);
+                }
+            });
+        }
+
+        // Dessiner les balles des mitrailleuses
+        function drawBullets() {
+            bullets.forEach((bullet, index) => {
+                ctx.beginPath();
+                ctx.roundRect(bullet.x, bullet.y, 5, 10, 2);
+                const gradient = ctx.createLinearGradient(bullet.x, bullet.y, bullet.x, bullet.y + 10);
+                gradient.addColorStop(0, '#ff00ff');
+                gradient.addColorStop(1, '#9400d3');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = 'rgba(255, 0, 255, 0.7)';
+                ctx.strokeStyle = '#ff69b4';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+                ctx.shadowBlur = 0;
+
+                bullet.y -= 5;
+                if (bullet.y < 0) {
+                    bullets.splice(index, 1);
+                } else {
+                    for (let c = 0; c < brickColumnCount; c++) {
+                        for (let r = 0; r < brickRowCount; r++) {
+                            const b = bricks[c][r];
+                            if (b.status > 0 && bullet.x > b.x && bullet.x < b.x + brickWidth && bullet.y > b.y && bullet.y < b.y + brickHeight) {
+                                b.status--;
+                                bullets.splice(index, 1);
+                                brickBreakSound.play(); // Son d'explosion 8-bit
+                                score += 10;
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Afficher le score
+        function drawScore() {
+            ctx.font = 'bold 20px "Orbitron", sans-serif';
+            ctx.fillStyle = '#00ffff';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'rgba(0, 255, 255, 0.8)';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Score: ${score}`, 10, 20);
+            ctx.shadowBlur = 0;
+        }
+
+        // Ajuster la couleur pour le gradient
+        function adjustColor(hex, amount) {
+            let r = parseInt(hex.slice(1, 3), 16) + amount;
+            let g = parseInt(hex.slice(3, 5), 16) + amount;
+            let b = parseInt(hex.slice(5, 7), 16) + amount;
+            r = Math.max(0, Math.min(255, r));
+            g = Math.max(0, Math.min(255, g));
+            b = Math.max(0, Math.min(255, b));
+            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        }
+
+        // Détection de collision
+        function collisionDetection() {
+            balls.forEach(ball => {
+                const nextX = ball.x + ball.dx;
+                const nextY = ball.y + ball.dy;
+
+                for (let c = 0; c < brickColumnCount; c++) {
+                    for (let r = 0; r < brickRowCount; r++) {
+                        const b = bricks[c][r];
+                        if (b.status > 0) {
+                            const brickX = b.x;
+                            const brickY = b.y;
+
+                            if (nextX + ball.radius > brickX && nextX - ball.radius < brickX + brickWidth &&
+                                nextY + ball.radius > brickY && nextY - ball.radius < brickY + brickHeight) {
+                                b.status--;
+                                brickBreakSound.play(); // Son d'explosion 8-bit
+                                score += 10 * b.maxHits;
+                                if (b.status === 0 && b.bonus) {
+                                    bonuses.push({ x: brickX + brickWidth / 2 - 10, y: brickY, type: b.bonus });
+                                }
+                                if (!ball.invincible) {
+                                    const dx = nextX - (brickX + brickWidth / 2);
+                                    const dy = nextY - (brickY + brickHeight / 2);
+                                    if (Math.abs(dx) > Math.abs(dy)) {
+                                        ball.dx = -ball.dx;
+                                    } else {
+                                        ball.dy = -ball.dy;
+                                    }
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Vérifier si le niveau est terminé
+        function checkLevelComplete() {
+            let bricksLeft = 0;
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    if (bricks[c][r].status > 0) bricksLeft++;
+                }
+            }
+            if (bricksLeft === 0) {
+                level++;
+                if (level > maxLevels) {
+                    levelCompleteSound.play(); // Son de victoire à la fin du jeu
+                    alert(`FÉLICITATIONS ! Score final : ${score}`);
+                    document.location.reload();
+                } else {
+                    levelCompleteSound.play(); // Son de victoire pour chaque niveau
+                    const levelBonus = getLevelEndBonus();
+                    applyLevelEndBonus(levelBonus);
+                    initBricks();
+                    balls = [{ x: canvas.width / 2, y: canvas.height - 30, dx: 3 + level * 0.2, dy: -3 - level * 0.2, radius: 12, invincible: false }];
+                    paddleX = (canvas.width - paddleWidth) / 2;
+                    paddleGuns = false;
+                }
+            }
+        }
+
+        // Boucle de jeu
+        let lastShotTime = 0;
+        function draw(timestamp = 0) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBricks();
+            balls.forEach(drawBall);
+            drawPaddle();
+            drawBonuses();
+            drawBullets();
+            drawScore();
+            collisionDetection();
+            checkLevelComplete();
+
+            // Gestion des balles
+            balls.forEach((ball, index) => {
+                if (ball.x + ball.dx > canvas.width - ball.radius || ball.x + ball.dx < ball.radius) {
+                    ball.dx = -ball.dx;
+                }
+                if (ball.y + ball.dy < ball.radius) {
+                    ball.dy = -ball.dy;
+                }
+                if (ball.y + ball.dy > canvas.height - ball.radius - paddleHeight) {
+                    if (ball.x + ball.radius > paddleX && ball.x - ball.radius < paddleX + paddleWidth) {
+                        ball.dy = -ball.dy;
+                        paddleHitSound.play(); // Son de ping pour la raquette
+                    } else if (balls.length > 1) {
+                        balls.splice(index, 1);
+                    } else {
+                        alert(`GAME OVER ! Score final : ${score}`);
+                        document.location.reload();
+                    }
+                }
+                ball.x += ball.dx;
+                ball.y += ball.dy;
+            });
+
+            // Mitrailleuses
+            if (paddleGuns && timestamp - lastShotTime > 200) {
+                bullets.push({ x: paddleX - 5, y: canvas.height - paddleHeight - 5 });
+                bullets.push({ x: paddleX + paddleWidth + 5, y: canvas.height - paddleHeight - 5 });
+                gunShotSound.play(); // Son de pew pour les mitrailleuses
+                lastShotTime = timestamp;
+            }
+
+            // Mouvement de la raquette
+            if (rightPressed && paddleX < canvas.width - paddleWidth) paddleX += 7;
+            else if (leftPressed && paddleX > 0) paddleX -= 7;
+
+            requestAnimationFrame(draw);
+        }
+
+        // Charger une police futuriste
+        const font = new FontFace('Orbitron', 'url(https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap)');
+        font.load().then(() => document.fonts.add(font));
+
+        // Démarrer le jeu
+        draw();
+    </script>
+</body>
+
+</html>
